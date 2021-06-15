@@ -1,0 +1,79 @@
+##################################### Política - Taxa de Governismo ####################################
+
+### Carregar pacotes
+
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(ggthemes)
+library(lubridate)
+library(tidyverse)
+
+###### CÂMARA DOS DEPUTADOS
+
+### Carregar e editar base de dados
+
+# Votos
+votos <- read_delim("http://dadosabertos.camara.leg.br/arquivos/votacoesVotos/csv/votacoesVotos-2019.csv", 
+                    ";", escape_double = FALSE, trim_ws = TRUE)
+votos <- data.frame(votos$idVotacao, votos$voto, votos$deputado_nome, votos$deputado_siglaPartido)
+colnames(votos) <- c("idVotacao", "Voto", "Nome", "Partido")
+
+# Orientações
+orientacoes <- read_delim("http://dadosabertos.camara.leg.br/arquivos/votacoesOrientacoes/csv/votacoesOrientacoes-2019.csv", 
+                          ";", escape_double = FALSE, trim_ws = TRUE)
+orientacoes <- data.frame(orientacoes$idVotacao, orientacoes$siglaBancada, orientacoes$orientacao)
+orientacoes$orientacoes.siglaBancada[orientacoes$orientacoes.siglaBancada == "Governo"] <- "GOV."
+orientacoes <- subset(orientacoes, orientacoes$orientacoes.siglaBancada=="GOV.")
+orientacoes <- data.frame(orientacoes$orientacoes.idVotacao, orientacoes$orientacoes.orientacao)
+colnames(orientacoes) <- c("idVotacao", "GovOrient")
+
+### Agregar e editar bases de dados
+
+votes <- full_join(votos, orientacoes, by = c("idVotacao" = "idVotacao"))
+
+votes$GovOrient[votes$GovOrient=="Liberado"] <- NA
+votes <- na.omit(votes)
+
+votes$Voto <- as.character(votes$Voto)
+votes$GovOrient <- as.character(votes$GovOrient)
+votes$check <- as.numeric(votes$Voto == votes$GovOrient)
+votes1 <- votes
+
+### Selecionar a idVotacao específica
+
+votes1 <- votes[grep("2207613", votes$idVotacao),]
+
+### Calcular
+
+votes_party <- votes1 %>%
+  group_by(Partido) %>%
+  summarise(Voto = sum(check))
+
+total_party <- data.frame(table(votes1$Partido))
+
+total_party$Freq[total_party$Freq==0] <- NA
+total_party <- na.omit(total_party)
+
+votes_party$Total <- total_party[2]
+votes_party$Governismo <- votes_party[2]*100/votes_party[3]
+votes_party$Governismo <- as.numeric(as.character(unlist(votes_party[4])))
+votes_party <- arrange(votes_party, desc(Governismo))
+
+### Plotar gráfico
+
+ggplot(votes_party, aes(x = reorder(Partido, +Governismo), 
+                        y = Governismo, fill = Governismo)) + 
+  geom_col() +
+  scale_fill_gradient(low = "red", high = "blue") +
+  labs(title='Taxa de Governismo',
+       subtitle='Marco Legal do Saneamento, Ano 2019', 
+       caption='Fonte: Dados da Câmara dos Deputados.',
+       fill='Governismo (%)') +  
+  theme_fivethirtyeight() +
+  coord_flip() +
+  scale_y_continuous(limits = c(0, 100))
+
+# Média
+
+mean(votes_party$Governismo)
